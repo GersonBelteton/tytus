@@ -16,7 +16,8 @@ class ExistsRelationalOperation(instruction.Instruction):
         self.groupbyCl = select.groupbyCl
         self.limitCl = select.limitCl
         self.temp = "t" + temp
-	self.s = select
+        self.s = select
+
     def execute(self, environment):
         parVal = ""
         out = self.temp + " = "
@@ -91,6 +92,7 @@ class ExistsRelationalOperation(instruction.Instruction):
         new.addNode(self.s.dot())
         return new
 
+
 class inRelationalOperation(instruction.Instruction):
     def __init__(self, temp, colData, optNot, select):
         instruction.Instruction.__init__(self, select.row, select.column)
@@ -104,7 +106,7 @@ class inRelationalOperation(instruction.Instruction):
         self.optNot = optNot
         self.colData = colData
         self.temp = "t" + temp
-	self.s = select
+        self.s = select
 
     def execute(self, environment):
         colData = self.colData.execute(environment)

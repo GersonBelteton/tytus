@@ -6,6 +6,8 @@ import binascii
 import sys
 from cryptography.fernet import Fernet
 from BlockChain.BlockChain import BlockChain
+from grafos import grafos, node
+from grafos import Grafo, Nodo
 
 # 1. UNIFICACION DE INDICES
 from storage.AVLMode import avlMode as avl
@@ -21,6 +23,7 @@ structs = [avl, b, bplus, _hash, isam, _dict]
 databases = []
 listBlockChain = []
 uIndex = {}
+fkIndex = {}
 isCompressed = False
 
 def dropAll():
@@ -115,7 +118,7 @@ def createTable(database, table, nCols):
             for i in databases:
                 if database == i["name"]:
                     t = {"name": table, "nCols": nCols, "tuples": [], "safeMode": False,
-                        "fk": None, "iu": None, "io": None}
+                        "fk": None, "iu": None, "io": None, "indexName": None}
                     i["tables"].append(t)
                     persistence(databases)
                     return value
@@ -239,8 +242,10 @@ def insert(database, table, register):
     for item in structs:
         codificacion = codificationValidation(getCodificationMode(database),register)
         if codificacion == True:
-            if insertVerifyUnique(database, table, register ):   #verifica si la tabla tiene indices unicos y si el indice unico viene en null
+            if insertVerifyUnique(database, table, register ) and insertVerifyFK(database, table, register):   #verifica si la tabla tiene indices unicos y si el indice unico viene en null
                 value = item.insert(database, table, register)
+                Unique(database,table,register)
+                foreingKey(database,table,register)
                 Unique(database,table,register)
                 if value != 2:
                     if value != 0:
@@ -286,7 +291,6 @@ def loadCSV(fileCSV, db, table):
                 for f in lector:
                     listaResultado.append(insert(db, table, f))
                 return listaResultado
-                # print("Operación Exitosa")
         except:
             raise
 
@@ -333,20 +337,25 @@ def update(database, table, register, columns):
 
 def delete(database, table, columns):
     pass
-    # for item in structs:
-    #     value = item.delete(database, table, columns)
-    #     if value != 2:
-    #         for i in databases:
-    #             if database == i["name"]:
-    #                 for t in i["tables"]:
-    #                     if table == t["name"]:
-    #                         for tup in t["tuples"]:
-    #                             index = 0
-    #                             for key in columns:
-    #                                 index = key
-    #                             tup["register"][index] = register[1]
-    #                     return value
-    # return 2
+    for item in structs:
+        value = item.delete(database, table, columns)
+        if value != 2:
+            if value != 0:
+                return value
+            for i in databases:
+                if database == i["name"]:
+                    for t in i["tables"]:
+                        if table == t["name"]:
+                            for tup in t["tuples"]:
+                                index = 0
+                                for key in columns:
+                                    index = key
+                                for reg in tup["register"]:
+                                    if reg == index:
+                                        t["tuples"].remove(tup)
+                                        persistence(databases)
+                                        return value
+    return 2
 
 def truncate(database, table):
     for item in structs:
@@ -359,7 +368,7 @@ def truncate(database, table):
                     for t in i["tables"]:
                         if table == t["name"]:
                             t["tuples"] = []
-                    # persistence()
+                    persistence()
                     return value
     return 2
 
@@ -387,11 +396,140 @@ def alterDatabaseMode(database, mode):
 
 # 3. ADMINISTRACION DE INDICES
 def alterTableAddFK(database, table, indexName, columns, tableRef, columnsRef):
-    pass
+    tabla = {}
+    indicePK = []
+    table_dic = {}
+    for db in databases: 
+        if database == db["name"]: 
+            for t in db["tables"]:
+                if tableRef in t["name"]: 
+                    indicePK  = t["pk"]
+                    if indicePK != [] : 
+                        pass
+                    else: 
+                        alterAddPK(database,tableRef,columnsRef)
+                        indicePK = columnsRef
+    for item in structs:
+        tuplas = item.extractTable(database, tableRef)
+        if tuplas != None:
+            if len(tuplas)>0:
+                if database in list(fkIndex.keys()):
+                    tablasReferenciadas = fkIndex[database]
+                    tupladetablas = (table,tableRef)
+                    if tupladetablas in list(tablasReferenciadas.keys()):
+                        indice = (indexName , columns , columnsRef)
+                        tablasReferenciadas[tupladetablas] = indice
+                        fkIndex[database] = tablasReferenciadas
+                    else: 
+                        indice = (indexName , columns , columnsRef)
+                        tablasReferenciadas[tupladetablas] = indice
+                        fkIndex[database] = tablasReferenciadas
+                else: 
+                    indice = (indexName , columns , columnsRef)
+                    tup_tbl = (table , tableRef)
+                    table_dic[tup_tbl] = indice
+                    fkIndex[database] = table_dic
+                if len(columnsRef) == len(columns) :
+                    createtbl =  item.createTable(database, table+tableRef+indexName, len(columnsRef))
+                    createNewpk = item.alterAddPK(database, table+tableRef+indexName ,columnsRef)
+                    if ( createtbl == 0 or createtbl ==3) and (createNewpk == 0 or createtbl == 3):
+                        contador = 0
+                        for i in tuplas:
+                            datos_Referenciados = [i[x] for x in columnsRef]
+                            if None in datos_Referenciados: 
+                                return 2 
+                            else: 
+                                value = item.insert(database, table+tableRef+indexName, datos_Referenciados)
+                                if value != 0 and value !=4  : 
+                                    return value
+                            contador +=1
+                        if contador == len(tuplas)-1:
+                            return 0 
+                else: 
+                    return "error columnas no son iguales"
+            elif tuplas ==[]: 
+                if database in list(fkIndex.keys()):
+                    tablasReferenciadas = fkIndex[database]
+                    tupladetablas = (table,tableRef)
+                    if tupladetablas in list(tablasReferenciadas.keys()):
+                        indice = (indexName , columns , columnsRef)
+                        tablasReferenciadas[tupladetablas] = indice
+                        fkIndex[database] = tablasReferenciadas
+                    else: 
+                        indice = (indexName , columns , columnsRef)
+                        tablasReferenciadas[tupladetablas] = indice
+                        fkIndex[database] = tablasReferenciadas
+                else: 
+                    indice = (indexName , columns , columnsRef)
+                    tup_tbl = (table , tableRef)
+                    table_dic[tup_tbl] = indice
+                    fkIndex[database] = table_dic
+                if len(columnsRef) == len(columns) :
+                    if item.createTable(database, table+tableRef+indexName, len(columnsRef))!=3 and item.alterAddPK(database, table+tableRef+indexName , len(columns)):
+                        return 0
 
-def alterTableDropFK(database, table, indexName):
-    pass
+def insertVerifyFK(database, table , tupla):
+    try: 
+        tabla = fkIndex[database]
+        indices = []
+        lista_verificadora = []
+        for i in list(tabla.keys()):
+            if table == i[0] :
+                tablaReferenciada = i[1]
+                informacion_referencia = tabla[(table, tablaReferenciada)]
+                nombre_fk = informacion_referencia[0]
+                table_auxiliar =table+tablaReferenciada+nombre_fk
+                indices_con_referencia = informacion_referencia[1]
+                indices_referenciados = informacion_referencia[2]
+                datos_para_verificar = [tupla[x] for x in indices_con_referencia]
+                if None in datos_para_verificar:
+                    lista_verificadora.append(False)
+                values = []
+                for estructura in structs:
+                    values = estructura.extractTable(database,table_auxiliar)
+                    if values != None:
+                        if datos_para_verificar in  values: 
+                            lista_verificadora.append(True)
+                        elif values == []:
+                            lista_verificadora.append(False)
+                        else:
+                            lista_verificadora.append(False)
+            else: 
+                return True
+        if False in lista_verificadora:
+            return False
+        else: 
+            return True
+    except : 
+        return True
 
+def foreingKey(database, table, tupla):
+    try:
+        tabla = fkIndex[database]
+        indices =[]
+        lista_verificadora = []
+        for i in list(tabla.keys()):
+            if table == i[1]:
+                tabla_con_FK = i[0]
+                informacion_referencia = tabla[(tabla_con_FK,table)]
+                nombre_fk = informacion_referencia[0]
+                table_auxiliar = tabla_con_FK + table + nombre_fk
+                indices_referenciados = informacion_referencia[2]
+                datos_para_verificar = [tupla[x] for x in indices_referenciados]
+                for estructura in structs: 
+                    value = estructura.insert(database,table_auxiliar,datos_para_verificar)
+                    if value == 0 or value == 4:
+                        lista_verificadora.append(True)
+                    else: 
+                        lista_verificadora.append(False)
+            else:
+                return True
+        if False in lista_verificadora:
+            return False
+        else: 
+            return True
+    except:
+        return True
 
 def insertVerifyUnique(database, table,tupla ):
     try:
@@ -404,12 +542,12 @@ def insertVerifyUnique(database, table,tupla ):
             return False
         else:
             for estructura in structs: 
-                    value = estructura.extractRow(database,indiceTbl,uniqueIndices)
-                    if value[0] == uniqueIndices[0]:
+                value = estructura.extractTable(database,indiceTbl)
+                if value != None :
+                    if uniqueIndices in value:
                         return False
-                    else:    
+                    else:
                         return True
-            
     except: 
         return True
 
@@ -425,14 +563,13 @@ def Unique(database, table,  tupla):
         else:
             for estructura in structs: 
                     value = estructura.insert(database,indiceTbl,uniqueIndices)
-                    if value != 2 or value != 3 or value!= 4 :
+                    if value !=2 :
                         return False
                     else:    
                         return True
             
     except: 
         return True
-
 
 def alterTableaddUnique(database , table,  indexName, colums): 
     tabla = {}
@@ -571,6 +708,9 @@ def alterDatabaseCompress(database, level):
 def alterDatabaseDecompress(database):
     try:
         chargePersistence()
+        global isCompressed
+        if not isCompressed:
+            return 3
         for db in databases:
             if db["name"] == database:
                 for table in db["tables"]:
@@ -588,8 +728,6 @@ def alterDatabaseDecompress(database):
                             newRegister.append(register)
                         insert(db['name'], table["name"], newRegister)
                 return 0
-        if not isCompressed:
-            return 3
     except:
         return 1
 
@@ -624,7 +762,7 @@ def alterTableCompress(database, table, level):
 
 def alterTableDecompress(database, table, level):
     try:
-        isCompressed = False
+        chargePersistence()
         for db in databases:
             if db["name"] == database:
                 for table in db["tables"]:
@@ -662,7 +800,10 @@ def alterTableDecompress(database, table, level):
         Información encriptada.
 """
 def encrypt(backup, password):
-    return Fernet(password).encrypt(backup.encode()).decode()
+    try:
+        return Fernet(password).encrypt(backup.encode()).decode()
+    except:
+        return None
 
 """
     @description
@@ -674,7 +815,10 @@ def encrypt(backup, password):
         Información descencriptada.
 """
 def decrypt(cipherBackup, password):
-    return Fernet(password).decrypt(cipherBackup.encode()).decode()
+    try:
+        return Fernet(password).decrypt(cipherBackup.encode()).decode()
+    except:
+        return None
 
 #generar el grafo reporte del block chain
 def generateGraphBlockChain(database, table):
@@ -810,3 +954,137 @@ def changueMode(database, isPersistence = False):
             i["mod"] = json
         if isPersistence:
             databases.append(i)
+            
+"""
+    @description
+        Agrega un índice, creando una estructura adicional con el 
+        modo indicado para la base de datos.
+    @param
+        database: Nombre de la base de datos a utilizar.
+        table: Nombre de la tabla donde están las llaves foráneas.
+        indexName: Nombre único del índice manejado como metadato de la 
+                tabla para ubicarlo fácilmente.
+        columns: Conjunto de índices de columnas que forman parte de la 
+                llave foránea, mínimo debe ser una columna.
+    @return
+        0: Operación exitosa
+        1: Error en la operación
+        2: database no existente
+        3: table no existente
+        4: ???
+"""
+def alterTableAddIndex(database, table, indexName, columns):
+    try:
+        for i in databases:
+            #verifica si la base de datos existe
+            if i.get("name") == database:
+                #obtiene el tipo de almacenamiento en base al modo de la DB
+                modeStorage = None
+                if i.get("mode") == "b":
+                    modeStorage = b
+                elif i.get("mode") == "avl":
+                    modeStorage = avl
+                elif i.get("mode") == "bplus":
+                    modeStorage = avl
+                elif i.get("mode") == "_hash":
+                    modeStorage = _hash
+                elif i.get("mode") == "isam":
+                    modeStorage = isam
+                elif i.get("mode") == "_dict":
+                    modeStorage = _dict
+                elif i.get("mode") == "json":
+                    modeStorage = json
+                tuples = modeStorage.extractTable(database, table)
+                for j in i.get("tables"):
+                    #verifica si la tabla existe en la base de datos indicada
+                    if j.get("name") == table:
+                        j["indexName"] = indexName
+                        modeStorage.createTable(database, (table+indexName), len(columns))
+                        for tp in tuples:
+                            listaData = []
+                            for col in columns:
+                                listaData.append(tp[col]) 
+                            modeStorage.insert(database, (table+indexName), listaData)
+                        return 0
+                #Tabla no existente
+                return 3
+        #Base de datos no existente
+        return 2
+    except Exception as e:
+        #Error en la operación
+        return 1
+def graphDF(database):
+    try: 
+        grafo = Grafo()
+        tablas = fkIndex[database]
+        for i in list(tablas.keys()):
+            tabla_con_referencia = i[0]
+            tabla_referenciada = i[1]
+            referencia = tablas[i]
+            grafo.insertar(tabla_referenciada, referencia , tabla_con_referencia)
+        agregados = [i.valor for i in grafo.nodosAgregados]
+        
+        
+        for db in databases: 
+            if database == db["name"]:
+                for t in db["tables"]:
+                    if t["name"] not in agregados:
+                        nodo = Nodo(t["name"])
+                        grafo.insertIndependiente(nodo)
+                    
+        grafo.graficar()
+        return "0"
+    except: 
+        None
+"""
+    @description
+        Destruye el índice tanto como metadato de la tabla como la
+        estructura adicional creada.
+    @param
+        database: Nombre de la base de datos a utilizar.
+        table: Nombre de la tabla donde están las llaves foráneas.
+        indexName: Nombre del índice manejado como metadato de la tabla
+        para ubicarlo fácilmente.
+    @return
+        0: Operación exitosa
+        1: Error en la operación
+        2: database no existente
+        3: table no existente
+        4: Nombre de índice no existente
+"""
+def alterTableDropIndex(database, table, indexName):
+    try:
+        for i in databases:
+            #verifica si la base de datos existe
+            if i.get("name") == database:
+                #obtiene el tipo de almacenamiento en base al modo de la DB
+                modeStorage = None
+                if i.get("mode") == "b":
+                    modeStorage = b
+                elif i.get("mode") == "avl":
+                    modeStorage = avl
+                elif i.get("mode") == "bplus":
+                    modeStorage = avl
+                elif i.get("mode") == "_hash":
+                    modeStorage = _hash
+                elif i.get("mode") == "isam":
+                    modeStorage = isam
+                elif i.get("mode") == "_dict":
+                    modeStorage = _dict
+                elif i.get("mode") == "json":
+                    modeStorage = json
+                for j in i.get("tables"):
+                    if j.get("indexName") != indexName:
+                        return 4
+                    #verifica si la tabla existe en la base de datos indicada
+                    if j.get("name") == table:
+                        j["indexName"] = None
+                        modeStorage.dropTable(database, (table+indexName))
+                        return 0
+                #Tabla no existente
+                return 3
+        #Base de datos no existente
+        return 2
+    except Exception as e:
+        #Error en la operación
+        return 1
